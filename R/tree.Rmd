@@ -13,7 +13,7 @@ library(tidyverse)
 library(data.table)
 ```
 ```{r}
-#' Title
+#' Function to perform differential expression. 
 #'
 #' @param sco 
 #'
@@ -48,16 +48,6 @@ mydeg <- function(sco) {
 }
 
 
-load("~/liulab_home/data/single_cell/Lee_data/cd3_plus.hippo.clustering.RData") ## hippo.out
-# head(hippo.out$labelmatrix)
-for (xx in seq(2,ncol(hippo.out$labelmatrix))) {
-    lee.sco$clust.temp = as.factor(hippo.out$labelmatrix[,xx])
-    p= DimPlot(lee.sco, reduction = "umapunorm",  group.by = "clust.temp", pt.size = .1, label = TRUE) +  NoLegend()
-        ggsave(file=sprintf(".figs/lee/lee.hippo.clusters1.%s.pdf", xx), p, width=15, height=10)
-}
-
-
-
 ```
 
 # create tree stucture
@@ -75,6 +65,7 @@ create.tree <- function(object, reduction='pca', dims=NULL, oldk = 1, newk = 2) 
      if(length(unique(out))==1) out[] = oldk
      out
 }
+# Function to create tree from seurat cluster. 
 create.cluster.tree<- function(sco) {
     seurat.clusters = levels(sco$seurat_clusters)
     maxk = length(unique(sco$seurat_clusters))
@@ -90,7 +81,7 @@ create.cluster.tree<- function(sco) {
         if(oldk >= maxk) break()
         seurat.clust.old = seurat.clusters[clust.mat.old == oldk]
         inx = which(seurat.clusters == oldk)
-        out = create.tree(sco[,sco$seurat_clusters %in% seurat.clust.old], reduction="harmony", oldk, newk, dims = 1:20)
+        out = create.tree(sco[,sco$seurat_clusters %in% seurat.clust.old], reduction="pca", oldk, newk, dims = 1:20)
         out = out[seurat.clust.old]
         clust.mat[, ii+1] = clust.mat[,ii]
         clust.mat[paste0("clust", names(out)),ii+1] = unlist(out)
@@ -98,8 +89,10 @@ create.cluster.tree<- function(sco) {
     clust.mat%>% t() %>%
         unique() %>% t()
 }
-
-clust.mat.all = create.cluster.tree(lee.sco)
+library(Seurat)
+sco = readRDS("<path>")
+sco = sco[,sample(ncol(sco),1000)]
+clust.mat.all = create.cluster.tree(sco)
 library(data.tree)
 # acme <- Node$new("Acme Inc.")
   # accounting <- acme$AddChild("Accounting")
@@ -135,7 +128,7 @@ for (ii in c(1:6,17)) {
         seurat.clust.curr = clust.inx[which(clust.curr==jj)]
         lee.degs[[cc]] = 
             tryCatch({
-            lee.sco[,(lee.sco$seurat_clusters %in%seurat.clust.curr) & (lee.sco$response %in% c("CR", "PD"))] %>%
+            sco[,(sco$seurat_clusters %in%seurat.clust.curr) & (sco$response %in% c("CR", "PD"))] %>%
             mydeg()}, error = function(e) NA)
         cc  = cc +1
     }
@@ -151,13 +144,13 @@ lee.deg.mat = lapply(lee.degs, function(tt){
     set_rownames(lee.degs[[1]]$gene)
 
 ## only include lymphocyte populations. 
-aa =lee.sco@reductions$umap@cell.embeddings 
-lymp.deg = lee.sco[,(aa[,1] > -10 &  aa[,2] < 10) & (lee.sco$response %in% c("CR", "PD"))] %>% 
+aa =sco@reductions$umap@cell.embeddings 
+lymp.deg = sco[,(aa[,1] > -10 &  aa[,2] < 10) & (sco$response %in% c("CR", "PD"))] %>% 
     mydeg()
 
 
-sel.inx = which((aa[,1] > -10 &  aa[,2] < 10) & (lee.sco$response %in% c("CR", "PD")) & (lee.sco$Treatment.Cycle=="C1D1"))
-lee.curr.pre  = lee.sco[,sel.inx]
+sel.inx = which((aa[,1] > -10 &  aa[,2] < 10) & (sco$response %in% c("CR", "PD")) & (sco$Treatment.Cycle=="C1D1"))
+lee.curr.pre  = sco[,sel.inx]
 lymp.deg.pre = lee.curr.pre %>% 
     mydeg()
 
