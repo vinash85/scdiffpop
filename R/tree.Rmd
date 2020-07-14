@@ -53,6 +53,9 @@ mydeg <- function(sco) {
 # create tree stucture
 ```{r}
 create.tree <- function(object, reduction='pca', dims=NULL, oldk = 1, newk = 2) {
+
+
+    object
     
      embeddings <- Embeddings(object = object, reduction = reduction)[, dims]
      km = kmeans(embeddings, centers = 2, iter.max = 10)$cluster
