@@ -159,3 +159,40 @@ lymp.deg.pre = lee.curr.pre %>%
     mydeg()
 
 ```
+
+
+## Maestro annotations 
+```{r}
+library(MAESTRO)
+GSE145281 = readRDS(file="~/liulab_home/data/single_cell/GSE145281/seurat.RDS") 
+
+message("Identify cluster specific genes ...")
+cluster.genes <- FindAllMarkersMAESTRO(object = GSE145281, min.pct = 0.1, logfc.threshold = 0.25, only.pos = TRUE)
+cluster.genes <- cluster.genes[cluster.genes$p_val_adj< 1E-20, ]
+
+
+# cell-type annotation
+
+
+annot.result = data.table(colnames(GSE145281)) 
+annot.result$HumanPrimaryCellAtlasData.fine = GSE145281$HumanPrimaryCellAtlasData.fine
+annot.result$HumanPrimaryCellAtlasData.main = GSE145281$HumanPrimaryCellAtlasData.main
+temp = RNAAnnotateCelltype(RNA = GSE145281,
+                                  genes = cluster.genes,
+                                  signatures = "human.immune.CIBERSORT",
+                                  min.score = 0.6)
+annot.result$cibersort = temp$assign.ident 
+
+temp = RNAAnnotateCelltype(RNA = GSE145281,
+                                  genes = cluster.genes,
+                                  signatures = "mouse.all.facs.TabulaMuris",
+                                  min.score = 0.6)
+annot.result$mouse.all.facs.TabulaMuris = temp$assign.ident 
+temp = RNAAnnotateCelltype(RNA = GSE145281,
+                                  genes = cluster.genes,
+                                  signatures = "mouse.all.droplet.TabulaMuris",
+                                  min.score = 0.6)
+annot.result$mouse.all.droplet.TabulaMuris  = temp$assign.ident 
+
+saveRDS(file="~/liulab_home/data/single_cell/GSE145281/cell.annotations.RDS",annot.result)
+```
