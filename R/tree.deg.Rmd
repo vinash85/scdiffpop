@@ -232,11 +232,13 @@ for (ii in seq(ncol(clust.mat) -1)) {
     deg.curr = mydeg(sco.sub)
     deg.curr = deg.curr[padj<0.1]
     ## Find markers in children
+    seurat.clust.cell.1 = seurat.clusters[clust.mat.new == oldk] %>% as.character
     Idents(sco.sub) = ifelse(sco.sub$seurat_clusters %in% seurat.clust.cell.1, 0 ,1) %>% as.factor
     markers.curr = FindAllMarkers(sco.sub, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25) ## this will give markers of both cell.1 (child1) and cell.2 (child2)
     markers.top  = markers.curr %>% group_by(cluster) %>% top_n(n = 50, wt = avg_logFC)
     term2gene  = markers.top %>%  as.data.table %>% 
     .[,.(term=cluster,gene=gene)]
+    ## perform enrichment see : https://yulab-smu.github.io/clusterProfiler-book/chapter3.html
     responsders.enrichment[[ii]] = enricher(geneList=deg.curr[log2FoldChange> 0]$gene, term2gene = term2gene, pvalueCutoff=1) 
     nonresponders.enrichment[[ii]] = enricher(geneList=deg.curr[log2FoldChange< 0]$gene, term2gene = term2gene, pvalueCutoff=1) 
 
