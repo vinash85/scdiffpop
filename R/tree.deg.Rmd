@@ -1,0 +1,252 @@
+---
+title: "Tree Differential Expression Analysis"
+author: "Danielle Paulson"
+date: "July 9, 2020"
+output: 
+  html_notebook:
+    toc: true
+    toc_float: true
+---
+
+# Load Packages
+
+```{r message = FALSE}
+library("Seurat")
+library("SingleR")
+library("dplyr")
+library("tidyr")
+library("ggplot2")
+library("data.table")
+library("magrittr")
+library(Matrix)
+library("cowplot")
+library("tidyverse")
+library("uwot")
+library("parallel")
+library(data.tree)
+library(DiagrammeR)
+library(rare)
+library(data.table)
+```
+
+# Load Data
+
+```{r}
+GSE145281 <- readRDS("seurat.RDS")
+GSE145281
+```
+
+# Perform Differential Expression
+
+```{r}
+DESeq2DETest <- function(
+  data.use,
+  cells.1,
+  cells.2,
+  verbose = TRUE,
+  ...
+) {
+  # if (!PackageCheck('DESeq2', error = FALSE)) {
+  #   stop("Please install DESeq2 - learn more at https://bioconductor.org/packages/release/bioc/html/DESeq2.html")
+  # }
+  group.info <- data.frame(row.names = c(cells.1, cells.2))
+  group.info[cells.1, "group"] <- "Group1"
+  group.info[cells.2, "group"] <- "Group2"
+  group.info[, "group"] <- factor(x = group.info[, "group"])
+  group.info$wellKey <- rownames(x = group.info)
+  dds1 <- DESeq2::DESeqDataSetFromMatrix(
+    countData = data.use,
+    colData = group.info,
+    design = ~ group
+  )
+  dds1 <- DESeq2::estimateSizeFactors(object = dds1)
+  dds1 <- DESeq2::estimateDispersions(object = dds1, fitType = "local")
+  dds1 <- DESeq2::nbinomWaldTest(object = dds1)
+  res <- DESeq2::results(
+    object = dds1,
+    contrast = c("group", "Group1", "Group2"),
+    alpha = 0.05,
+    ...
+  )
+  # to.return <- data.frame(p_val = res$pvalue, row.names = rownames(res))
+  return(res)
+}
+
+```
+```{r}
+mydeg <- function(sco.curr) {
+    require(Matrix)
+    require(dplyr)
+    exp.curr1 = sco.curr@assays$RNA@counts[sco.curr@assays$RNA@var.features,]
+    meta.dt1 = sco.curr@meta.data %>%
+        as.data.table() %>%
+        .[,.(binaryResponse=response, patient=patient)] 
+    
+    meta.curr = list()
+    exp.curr2 = list()
+    for(patient in unique(meta.dt1$patient)){
+        inx = which(meta.dt1$patient==patient)
+        exp.curr2[[patient]] = rowSums(exp.curr1[,inx],na.rm=T)
+        meta.curr[[patient]] = meta.dt1[inx[1],]
+    }
+    meta.dt = do.call(rbind, meta.curr)
+    exp.curr = t(do.call(rbind, exp.curr2))
+    responders = meta.dt[binaryResponse==1]$patient
+    nonresponders = meta.dt[binaryResponse==0]$patient
+    deseq.out = DESeq2DETest(data.use=exp.curr[,c(responders,nonresponders)], cells.1=responders, cells.2=nonresponders)
+    deseq.dt = deseq.out %>%
+        as.data.table() %>%
+        mutate(gene=rownames(.)) %>%
+        .[order(pvalue)] %>%
+        .[,padj:=p.adjust(pvalue, method="fdr")]
+    deseq.dt
+}
+```
+
+```{r}
+deg.root <- mydeg(GSE145281)
+deg.root
+```
+```{r}
+deg.root[1, 2]
+```
+
+# Find Markers
+
+## All Clusters
+
+```{r}
+GSE145281.markers.all <- FindAllMarkers(GSE145281, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+GSE145281.markers.all
+```
+```{r}
+GSE145281.markers.all[1, 7]
+```
+
+```{r}
+newd <-  GSE145281.markers.all %>% group_by(gene) %>% filter(n()>1) #
+newd
+```
+
+# Phyper Test for Enrichment
+
+```{r}
+deg.root = 18897 (group 1)
+GSE145281.markers.all = 4,065 (group 2)
+```
+
+```{r}
+overlaps <- 0
+
+x = 1
+z <- c(1:18897)
+
+while (x <= 4065){
+  
+for(val in z) {
+  if(all(GSE145281.markers.all[x, 7] == deg.root[val, 2])){
+  overlaps <- overlaps + 1
+  z[-val]
+  }
+}
+x = x + 1
+}
+print(overlaps)
+```
+
+```{r}
+intersect(GSE145281.markers.all[, 7], deg.root[, 2])
+```
+
+
+```{r}
+phyper(Overlap-1, group2, Total-group2, group1,lower.tail= FALSE)
+```
+
+# Confirm with Fisher Test
+
+```{r}
+fisher.test(matrix(c(Overlap, group2-Overlap, group1-Overlap, Total-group2-group1 +Overlap), 2, 2), alternative='greater')$p.value
+```
+
+
+
+
+
+
+
+## Group 1
+
+```{r}
+clusters.grp.1 = c(0, 4, 2, 7, 6, 14, 10, 15, 13, 12, 16)
+GSE145281.1 = GSE145281[, GSE145281$seurat_clusters %in% clusters.grp.1]
+```
+
+```{r}
+GSE145281.markers.1 <- FindAllMarkers(GSE145281.1, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+GSE145281.markers.1
+```
+
+## Group 2
+
+```{r}
+clusters.grp.2 = c(1, 9, 8, 3, 5, 11)
+GSE145281.2 = GSE145281[, GSE145281$seurat_clusters %in% clusters.grp.2]
+```
+
+```{r}
+GSE145281.markers.2 <- FindAllMarkers(GSE145281.2, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+GSE145281.markers.2
+```
+
+## framework for differential expression analysis assuming clust.mat and sco as inputs 
+```{r}
+library(dplyr)
+library(magrittr)
+sco = GSE145281
+
+sco$binaryResponse =sco$response
+sco.sub = GSE145281[, GSE145281$seurat_clusters %in% c(10,11)]
+
+library(clusterProfiler)
+responsders.enrichment = nonresponsders.enrichment = list()
+old.clusters.id = unique(sco$seurat_clusters) %>% as.character
+for (ii in seq(ncol(clust.mat) -1)) {
+    clust.mat.old = clust.mat[, ii] 
+    clust.mat.new = clust.mat[, ii+1] 
+    temp =  table(clust.mat.old) 
+    temp = temp[temp > 1]
+    if(length(temp) == 0){ 
+        break
+    }
+    ## finding group with most clusters
+    oldk = which.max(temp) %>% 
+    names() %>% as.numeric() %>% min()
+    newk=max(clust.mat[,ii]) + 1
+
+    seurat.clust.old = seurat.clusters[clust.mat.old == oldk] %>% as.character
+    inx = which(seurat.clusters == oldk)
+    sco.sub = sco[,sco$seurat_clusters %in% seurat.clust.old]%>%
+     FindVariableFeatures(selection.method = "vst", nfeatures = 2000)
+    ## Perform differential expression
+    deg.curr = mydeg(sco.sub)
+    deg.curr = deg.curr[padj<0.1]
+    ## Find markers in children
+    Idents(sco.sub) = ifelse(sco.sub$seurat_clusters %in% seurat.clust.cell.1, 0 ,1) %>% as.factor
+    markers.curr = FindAllMarkers(sco.sub, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25) ## this will give markers of both cell.1 (child1) and cell.2 (child2)
+    markers.top  = markers.curr %>% group_by(cluster) %>% top_n(n = 50, wt = avg_logFC)
+    term2gene  = markers.top %>%  as.data.table %>% 
+    .[,.(term=cluster,gene=gene)]
+    responsders.enrichment[[ii]] = enricher(geneList=deg.curr[log2FoldChange> 0]$gene, term2gene = term2gene, pvalueCutoff=1) 
+    nonresponders.enrichment[[ii]] = enricher(geneList=deg.curr[log2FoldChange< 0]$gene, term2gene = term2gene, pvalueCutoff=1) 
+
+}
+
+```
+
+
+
+
+
+
+
