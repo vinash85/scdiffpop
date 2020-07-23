@@ -240,13 +240,13 @@ for (ii in seq(ncol(clust.mat) -1)) {
     term2gene  = markers.top %>%  as.data.table %>% 
     .[,.(term=cluster,gene=gene)] %>% as.data.frame
     ## perform enrichment see : https://yulab-smu.github.io/clusterProfiler-book/chapter3.html
-    try(
+    try({
       responsders.enrichment[[ii]] = enricher(gene=deg.curr[log2FoldChange> 0]$gene, TERM2GENE = term2gene, pvalueCutoff=1)@result 
-      )
-    try(
+    })
+    try({
     nonresponders.enrichment[[ii]] = enricher(gene=deg.curr[log2FoldChange< 0]$gene, TERM2GENE = term2gene, pvalueCutoff=1)@result
-    )
 
+    })
 }
 
 ```
