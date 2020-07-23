@@ -53,11 +53,11 @@ mydeg <- function(sco) {
 # create tree stucture
 ```{r}
 create.tree <- function(object, reduction='pca', dims=NULL, oldk = 1, newk = 2) {
-
-
-    object
-    
-     embeddings <- Embeddings(object = object, reduction = reduction)[, dims]
+  object %<>% FindVariableFeatures(selection.method = "vst", nfeatures = 2000) %>% 
+  ScaleData(verbose = FALSE) 
+  object %<>% 
+  RunPCA(pc.genes = object@assays$RNA@var.features, npcs = 50, verbose = FALSE)
+  embeddings <- Embeddings(object = object, reduction = reduction)[, dims]
      km = kmeans(embeddings, centers = 2, iter.max = 10)$cluster
      seurat.clust = object$seurat_clusters
      out = sapply(unique(seurat.clust), function(tt){
@@ -106,10 +106,10 @@ create.cluster.tree<- function(sco) {
         unique() %>% t()
 }
 library(Seurat)
-sco = readRDS("<path>")
-sco.sub = sco[,sample(ncol(sco),100)]
+sco = readRDS(file="~/liulab_home/data/single_cell/GSE145281/seurat.RDS")
+# sco = readRDS("<path>")
+sco.sub = sco[,sample(ncol(sco),5000)]
 clust.mat.all = create.cluster.tree(sco.sub)
-library(data.tree)
 # acme <- Node$new("Acme Inc.")
   # accounting <- acme$AddChild("Accounting")
 
