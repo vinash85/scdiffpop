@@ -251,6 +251,65 @@ for (ii in seq(ncol(clust.mat) -1)) {
 
 ```
 
+## singleR on psuedobulk 
+```{r}
+
+get.pseudobulk <- function(sco.curr, combine.col) {
+  require(Matrix)
+  require(dplyr)
+  exp.curr1 = sco.curr@assays$RNA@scale.data
+  agg.col = sco.curr@meta.data[[combine.col]]
+  exp.curr2 = list()
+  agg.col.uniq = unique(agg.col) %>% sort
+  for(tt in agg.col.uniq){
+    inx = which(agg.col==tt)
+    exp.curr2[[tt]] = rowSums(exp.curr1[,inx],na.rm=T)
+  }
+  t(do.call(rbind, exp.curr2)) %>% 
+  set_colnames(agg.col.uniq)
+}
+
+sco.new = sco %>% FindVariableFeatures(selection.method = "vst", nfeatures = 15000) %>% 
+    ScaleData(verbose = FALSE) 
+psuedobulk.sco = get.pseudobulk(sco.new, combine.col = "seurat_clusters")
+require(SingleR)
+singleR.annotations = list() 
+hpca.se <-  SingleR::MonacoImmuneData()
+singleR.annotations$MonacoImmuneData.main <- SingleR(test = psuedobulk.sco, ref = hpca.se, labels = hpca.se$label.main)
+singleR.annotations
+singleR.annotations$MonacoImmuneData.fine <- SingleR(test = psuedobulk.sco, ref = hpca.se, labels = hpca.se$label.fine)
+
+p  = DimPlot(object = sco.new, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend() 
+ggsave(p,filename="~/liulab_home/projects/gdt/results/GSE145281.umap.pdf")
+
+
+p = FeaturePlot(sco.new, features = c("MS4A1", "GNLY", "CD3E", "CD14", "FCER1A", "FCGR3A", "LYZ", "PPBP", 
+    "CD8A"))
+ggsave(p,filename="~/liulab_home/projects/gdt/results/GSE145281.umap.markers.pdf")
+
+sco.new.markers <- FindAllMarkers(sco, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+top10 <- sco.new.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_logFC)
+ p = DoHeatmap(sco.new, features = top10$gene) + NoLegend()
+ggsave(p,filename="~/liulab_home/projects/gdt/results/GSE145281.umap.markersheat.pdf", width =16, height=16)
+
+library(readxl)
+mymarkers = readxl::read_excel("~/liulab_home/data/single_cell/markers/chenfei_cellmarkers.xlsx")
+
+
+
+ p = DoHeatmap(sco.new, features = toupper(mymarkers$Gene)) + NoLegend()
+ggsave(p,filename="~/liulab_home/projects/gdt/results/GSE145281.umap.markersheat.pdf", width =16, height=25)
+
+top100 <- sco.new.markers %>% group_by(cluster) %>% top_n(n = 100, wt = avg_logFC)
+top100.int = top100[top100$gene %in% mymarkers$Gene,]
+ p = DoHeatmap(sco.new, features = toupper(top100.int$gene)) + NoLegend()
+ggsave(p,filename="~/liulab_home/projects/gdt/results/GSE145281.umap.top.markersheat.pdf", width =16, height=16)
+
+
+
+cluster = seq(0,16)
+my.annot = c("Naive CD4+ T", "CD36+ Monocytes", "CXCR4+ NK", "CD68- Monocytes", "CD8A T", "CD14- INFG- Monocytes", "B cells", "CXCR4- NK", "Non classical monocytes", "Monocytes", "RUNX3+ NK", "Myeloid DC", "Low-density basophils", "Effector Memory T", "Th1", "Plasmacytoid DC", "Naive CD8 T")
+```
 
 
 
