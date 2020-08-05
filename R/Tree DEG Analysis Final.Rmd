@@ -2,24 +2,16 @@
 title: "Single-Cell Differential Immune Population Analysis"
 author: "Danielle Paulson"
 date: "July 25, 2020"
-output: 
+output:
+  html_document:
+    toc: yes
+    df_print: paged
   html_notebook:
-    toc: true
-    toc_float: true
+    toc: yes
+    toc_float: yes
 ---
 
 # Load packages
-
-```{r}
-install.packages("Seurat")
-```
-
-```{r}
-if (!requireNamespace("BiocManager", quietly = TRUE))
-    install.packages("BiocManager")
-
-BiocManager::install("org.Hs.eg.db")
-```
 
 ```{r message = FALSE}
 library(Seurat)

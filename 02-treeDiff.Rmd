@@ -1,0 +1,76 @@
+---
+title: "Tree differential expression analysis "
+author: "P. Nicol"
+date: "8/4/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Summary** In this file I am going to implement the algorithm used by scDiffPop.
+
+
+## Load the data 
+
+As always, we load the data 
+
+```{r}
+Sco <- readRDS("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/gse145281/seurat.RDS")
+Sco <- subset(Sco, idents = c(15,16), invert = TRUE)
+```
+
+Let's visualize the predefined clusters 
+
+```{r, warning=FALSE}
+cell_types = c("Naive CD4+ T", "CD36+ Monocytes", "CXCR4+ NK", "CD68- Monocytes", "CD8A T", "CD14- INFG- Monocytes", "B cells", "CXCR4- NK", "Non classical monocytes", "Monocytes", "RUNX3+ NK", "Myeloid DC", "Low-density basophils", "Effector Memory T", "Th1")
+names(cell_types) <- levels(Sco)
+Sco <- Seurat::RenameIdents(Sco, cell_types)
+
+Seurat::DimPlot(Sco, reduction = "umap", label = TRUE, pt.size = 1) + Seurat::NoLegend()
+```
+
+
+## Creating a tree
+
+We can create a cluster tree using Hierarchical clustering, although there are some other ways to do this. The easiest way to do this would be to use the cluster centroids that resulted from running $k$-means on the PCA embedded data. However, it doesn't appear that the data frame `Sco` has this. The next best way to do this is with a pseudobulk (i.e, taking the average expression in gene space). The pseudobulk is made easy by `Seurat::AverageExpression()`. 
+
+```{r}
+PB <- Seurat::AverageExpression(Sco, verbose = FALSE)
+dim(PB$RNA)
+```
+
+So `PB` has rows which are genes and columns which are cell types (15 of them). We will view these as our cluster cetroids and do Hierarchical clustering on this. We will do complete linkage. First we make a dissimilarity matrix
+
+```{r}
+D <- dist(t(PB$RNA))
+DM <- as.matrix(D)
+dim(DM)
+```
+
+Now we do the clustering and view the dendogram 
+
+```{r}
+Tree <- hclust(D)
+plot(Tree)
+```
+
+This looks pretty similar to what is in the report. 
+
+
+
+## Traversing the tree 
+
+When we implement the differential expression analysis, we might find it convenient to quickly get a subtree. We'll have to be a bit creative with the return of `hclust`. 
+
+```{r}
+
+```
+
+
+
+
+
+
+

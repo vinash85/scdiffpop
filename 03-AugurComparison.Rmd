@@ -1,0 +1,83 @@
+---
+title: "Applying Augur to PBMC data"
+author: "P. Nicol"
+date: "8/5/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Summary** In this file I apply Augur to the PBMC dataset. You'll need to have Augur installed (do this from GitHub) to run this code. 
+
+
+## Load the data 
+
+As always, we load the data 
+
+```{r}
+Sco <- readRDS("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/gse145281/seurat.RDS")
+Sco <- subset(Sco, idents = c(15, 16), invert = TRUE)
+```
+
+We need to adjust the metadata so that Augur will accept it.
+
+```{r}
+cell_types <- c("Naive CD4+ T", "CD36+ Monocytes", "CXCR4+ NK", "CD68- Monocytes", "CD8A T", "CD14- INFG- Monocytes", "B cells", "CXCR4- NK", "Non classical monocytes", "Monocytes", "RUNX3+ NK", "Myeloid DC", "Low-density basophils", "Effector Memory T", "Th1")
+response <- c("NR", "R")
+
+Sco@meta.data <- data.frame(label = Sco$response, cell_type = as.integer(Sco$seurat_clusters))
+Sco@meta.data[,1] <- sapply(Sco@meta.data[,1], function(x) response[x+1])
+Sco@meta.data[,2] <- sapply(Sco@meta.data[,2], function(x) cell_types[x])
+
+head(Sco@meta.data)
+```
+
+Now we can run the Augur algorithm with default parameters
+
+```{r, eval = FALSE}
+augur = Augur::calculate_auc(Sco, n_threads = 8)
+
+save(augur, file = "/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/Augur/augur_res.RData")
+```
+
+The above chunk takes around 20 minutes to complete on my laptop.
+
+
+## Results
+
+Let's take a look at what we got. First, we load the list from our files.
+
+```{r}
+load("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/Augur/augur_res.RData")
+```
+
+Now we take a look at the AUC 
+
+```{r}
+augur$AUC
+```
+
+Note that the algorithm cut out low-density basophils, since there are only 14 responding cells which have this cell type and the default settings of their algorithm requires at least $20$ cells in each class (maybe this is interesting). Let's also plot it 
+
+
+```{r}
+library(ggplot2)
+
+#prepare colors
+library(Polychrome)
+alfa <- alphabet.colors(14)
+
+#plot
+df <- as.data.frame(augur$AUC)
+p <- ggplot(data=df, aes(x=cell_type, y = auc)) + geom_bar(stat = "identity", fill = alfa)
+p <- p + xlab("Cell type") + ylab("AUC (Augur)") + coord_cartesian(ylim=c(0.5,0.75))
+p <- p + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
+plot(p)
+
+#save the plot
+png(file = "/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/Augur/auc_pbmc.png")
+```
+
+

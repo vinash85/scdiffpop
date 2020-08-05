@@ -1,0 +1,72 @@
+---
+title: "Composition of immune cells between responders and non-responders"
+author: "P. Nicol"
+date: "8/4/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Let's load the data 
+
+```{r}
+Sco <- readRDS("/Users/phillipnicol/Desktop/local_files/scRNA/gse145281/seurat.RDS")
+Sco <- subset(Sco, idents = c(15,16), invert = TRUE)
+```
+
+Let's visualize the predefined clusters 
+
+```{r, warning=FALSE}
+cell_types = c("Naive CD4+ T", "CD36+ Monocytes", "CXCR4+ NK", "CD68- Monocytes", "CD8A T", "CD14- INFG- Monocytes", "B cells", "CXCR4- NK", "Non classical monocytes", "Monocytes", "RUNX3+ NK", "Myeloid DC", "Low-density basophils", "Effector Memory T", "Th1")
+names(cell_types) <- levels(Sco)
+Sco <- Seurat::RenameIdents(Sco, cell_types)
+
+Seurat::DimPlot(Sco, reduction = "umap", label = TRUE, pt.size = 1) + Seurat::NoLegend()
+```
+
+Now let's get the number of cells in each category
+
+
+```{r}
+resp_type <- Sco$seurat_clusters[Sco$response==1]
+nonresp_type <- Sco$seurat_clusters[Sco$response==0]
+counts_resp <- sapply(c(0:(length(cell_types)-1)), function(x) length(which(resp_type == x)))
+counts_nonresp <- sapply(c(0:(length(cell_types)-1)), function(x) length(which(nonresp_type == x)))
+counts <- as.data.frame(cbind(counts_resp,counts_nonresp))
+rownames(counts) <- cell_types; colnames(counts) <- c("response", "Non-response")
+counts
+```
+
+We will probably need the total number of cells in each category as well 
+
+```{r}
+total_resp <- length(which(Sco$response==1)); total_nonresp <- length(which(Sco$response == 0))
+```
+
+
+## Comparing cell types 
+
+Let's start out simple. Let's see if there is a significant difference between cell types for responders and non-responders. We'll run Fisher's exact test for each type 
+
+```{r}
+makeContingencyTable <- function(counts, i, totals) {
+  C <- matrix(nrow=2,ncol=2)
+  C[1,1] <- counts[i,1]; C[1,2] <- counts[i,2]
+  C[2,1] <- totals[1]-C[1,1]; C[2,2] <- totals[2]-C[1,2]
+  return(C)
+}
+
+pvals <- sapply(c(1:nrow(counts)), function(x) {
+  C <- makeContingencyTable(counts,x,c(total_resp, total_nonresp))
+  return(fisher.test(C)$p.value)
+})
+
+df <- as.data.frame(pvals); rownames(df) <- cell_types; colnames(df) <- "p-value"
+df
+```
+
+
+
+
