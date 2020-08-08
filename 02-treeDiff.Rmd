@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-**Summary** In this file I am going to implement the algorithm used by scDiffPop.
+**Summary** In this file I am going to implement the algorithm used by scDiffPop. Install `igraph`, `Seurat`, `DESeq2` to run this. 
 
 
 ## Load the data 
@@ -17,6 +17,11 @@ knitr::opts_chunk$set(echo = TRUE)
 As always, we load the data 
 
 ```{r}
+#change as needed
+path <- "/Users/phillipnicol/Desktop/local_files/data/scDiffPopData"
+
+set.seed(61922940)
+
 Sco <- readRDS("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/gse145281/seurat.RDS")
 Sco <- subset(Sco, idents = c(15,16), invert = TRUE)
 ```
@@ -34,43 +39,165 @@ Seurat::DimPlot(Sco, reduction = "umap", label = TRUE, pt.size = 1) + Seurat::No
 
 ## Creating a tree
 
-We can create a cluster tree using Hierarchical clustering, although there are some other ways to do this. The easiest way to do this would be to use the cluster centroids that resulted from running $k$-means on the PCA embedded data. However, it doesn't appear that the data frame `Sco` has this. The next best way to do this is with a pseudobulk (i.e, taking the average expression in gene space). The pseudobulk is made easy by `Seurat::AverageExpression()`. 
+Our next goal is to create a cluster which reflects the relationships of clusters (cell types). Initially, all cell types are in the same group. 
 
 ```{r}
-PB <- Seurat::AverageExpression(Sco, verbose = FALSE)
-dim(PB$RNA)
+Mode <- function(x) {
+  xu <- unique(x)
+  return(xu[which.max(tabulate(match(x, xu)))])
+}
+
+SplitGroup <- function(Sco_sub, ixs) {
+  #Find variable features
+  Seurat::FindVariableFeatures(Sco_sub, verbose = FALSE)
+  
+  #Scale data (presumably for PCA)
+  Seurat::ScaleData(Sco_sub)
+  
+  #Run PCA on the variable features. Get 50 dimensional embeddings
+  Seurat::RunPCA(Sco, pc.genes = Sco_sub@assays$RNA@var.features, npcs = 50, verbose = FALSE)
+  embeddings <- Seurat::Embeddings(object = Sco_sub, reduction = 'pca')[,1:20]
+  
+  #Cluster via k means
+  km <- kmeans(embeddings, centers = 2, iter.max = 10)$cluster
+  
+  #Now we partition the clusters into one of two groups 
+  out <- sapply(ixs-1, function(x) {
+    Mode(km[which(Sco_sub$seurat_clusters == x)])
+  })
+  
+  return(out)
+}
 ```
 
-So `PB` has rows which are genes and columns which are cell types (15 of them). We will view these as our cluster cetroids and do Hierarchical clustering on this. We will do complete linkage. First we make a dissimilarity matrix
 
 ```{r}
-D <- dist(t(PB$RNA))
-DM <- as.matrix(D)
-dim(DM)
+group <- rep(1, length(cell_types))
+
+TreeMat <- matrix(1, nrow = length(cell_types), ncol = 1)
+counter <- 1
+
+while(length(unique(group)) != length(cell_types)) {
+  #Get group with most clusters
+  ixs <- which(group == Mode(group))
+  
+  split <- SplitGroup(subset(Sco, subset = seurat_clusters %in% (ixs-1)), ixs)
+
+  if(length(unique(split)) > 1) {
+    counter <- counter + 1
+    subgroup <- group[ixs]
+    subgroup[split == 2] <- counter
+    counter <- counter + 1
+    subgroup[split == 1] <- counter
+    group[ixs] <- subgroup
+    
+    TreeMat <- cbind(TreeMat, group)
+  }
+  else {
+    for(j in ixs) {
+      counter <- counter + 1
+      group[j] <- counter
+      
+      TreeMat <- cbind(TreeMat, group)
+    }
+  }
+}
+
+
 ```
 
-Now we do the clustering and view the dendogram 
+
+
+
+## Converting the tree to a more convenient format
+
+As of now the tree is in a slightly unusual format 
 
 ```{r}
-Tree <- hclust(D)
-plot(Tree)
+TreeMat
 ```
 
-This looks pretty similar to what is in the report. 
+We'll convert this to a more convenient form 
+
+```{r}
+Tree <- matrix(nrow = 0, ncol = 2)
+
+counter <- 1
+
+for(i in 2:ncol(TreeMat)) {
+  newvals <- unique(TreeMat[TreeMat[,i] > counter,i])
+  for(j in newvals) {
+    counter <- counter + 1 
+    ixs <- which(TreeMat[,i] == counter)
+    newvec <- c(counter, TreeMat[ixs[1], i-1])
+    Tree <- rbind(Tree, newvec)
+  }
+}
+
+#Change names of leaves
+cntr <- 1
+for(ct in TreeMat[,ncol(TreeMat)]) {
+  ix <- which(Tree[,1] == ct)
+  Tree[ix,1] <- cell_types[cntr]
+  cntr <- cntr+1
+}
+
+# Also give the columns a name 
+colnames(Tree) <- c("Child", "Parent")
+rownames(Tree) <- c(1:nrow(Tree))
+Tree 
+```
 
 
+```{r}
+TreeIG <- cbind(Tree[,2], Tree[,1])
+TreeIG <- as.matrix(TreeIG)
 
+G <- igraph::graph_from_edgelist(TreeIG)
+plot(G, layout = igraph::layout_as_tree)
+```
+
+Obviously the spacing needs some work, but at least we have formed a valid tree. 
 ## Traversing the tree 
 
-When we implement the differential expression analysis, we might find it convenient to quickly get a subtree. We'll have to be a bit creative with the return of `hclust`. 
+We should also write a quick function to get the leaves of any subtree. 
 
 ```{r}
-
+DFS <- function(Tree, node) {
+  if(node == 0) {
+    return(cell_types)
+  }
+  
+  leaves <- c() 
+  
+  row <- Tree[node,]
+  
+  newparent <- row[1]
+  
+  allchild <- which(Tree[,2] == row[1])
+  
+  for(child in allchild) {
+    leaves <- c(leaves, DFS(Tree, child))
+  }
+  
+  if(length(allchild) == 0) {
+    return(row[1])
+  }
+  
+  return(leaves)
+}
 ```
 
+## Differential expression on the tree 
 
 
 
+
+## Appendix
+
+```{r}
+sessionInfo()
+```
 
 
 
