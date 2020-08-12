@@ -154,7 +154,9 @@ TreeIG <- cbind(Tree[,2], Tree[,1])
 TreeIG <- as.matrix(TreeIG)
 
 G <- igraph::graph_from_edgelist(TreeIG)
-plot(G, layout = igraph::layout_as_tree)
+V(G)$shape <- "none"
+plot(G, layout = -layout.reingold.tilford(G, root=1)[,2:1], label.color = "blue")
+
 ```
 
 Obviously the spacing needs some work, but at least we have formed a valid tree. 
@@ -191,6 +193,116 @@ DFS <- function(Tree, node) {
 ## Differential expression on the tree 
 
 
+## Identify differentially expressed genes
+
+```{r}
+DESeq2DETest <- function(
+  data.use,
+  cells.1,
+  cells.2,
+  verbose = TRUE,
+  ...
+) {
+  # if (!PackageCheck('DESeq2', error = FALSE)) {
+  #   stop("Please install DESeq2 - learn more at https://bioconductor.org/packages/release/bioc/html/DESeq2.html")
+  # }
+  group.info <- data.frame(row.names = c(cells.1, cells.2))
+  group.info[cells.1, "group"] <- "Group1"
+  group.info[cells.2, "group"] <- "Group2"
+  group.info[, "group"] <- factor(x = group.info[, "group"])
+  group.info$wellKey <- rownames(x = group.info)
+  dds1 <- DESeq2::DESeqDataSetFromMatrix(
+    countData = data.use,
+    colData = group.info,
+    design = ~ group
+  )
+  dds1 <- DESeq2::estimateSizeFactors(object = dds1)
+  dds1 <- DESeq2::estimateDispersions(object = dds1, fitType = "local")
+  dds1 <- DESeq2::nbinomWaldTest(object = dds1)
+  res <- DESeq2::results(
+    object = dds1,
+    contrast = c("group", "Group1", "Group2"),
+    alpha = 0.05,
+    ...
+  )
+  # to.return <- data.frame(p_val = res$pvalue, row.names = rownames(res))
+  return(res)
+}
+```
+
+```{r}
+mydeg <- function(sco.curr) {
+    require(Matrix)
+    require(dplyr)
+    exp.curr1 = sco.curr@assays$RNA@counts[sco.curr@assays$RNA@var.features,]
+    meta.dt1 = sco.curr@meta.data %>%
+        as.data.table() %>%
+        .[,.(binaryResponse=response, patient=patient)] 
+    
+    meta.curr = list()
+    exp.curr2 = list()
+    for(patient in unique(meta.dt1$patient)){
+        inx = which(meta.dt1$patient==patient)
+        exp.curr2[[patient]] = rowSums(exp.curr1[,inx],na.rm=T)
+        meta.curr[[patient]] = meta.dt1[inx[1],]
+    }
+    meta.dt = do.call(rbind, meta.curr)
+    exp.curr = t(do.call(rbind, exp.curr2))
+    responders = meta.dt[binaryResponse==1]$patient
+    nonresponders = meta.dt[binaryResponse==0]$patient
+    deseq.out = DESeq2DETest(data.use=exp.curr[,c(responders,nonresponders)], cells.1=responders, cells.2=nonresponders)
+    deseq.dt = deseq.out %>%
+    as.data.frame %>% 
+        mutate(gene=rownames(.)) %>%
+        as.data.table() %>%
+        .[order(pvalue)] %>%
+        .[,padj:=p.adjust(pvalue, method="fdr")]
+    deseq.dt
+}
+```
+
+## Identify enriched genes
+
+```{r message = FALSE}
+sco.adjusted <- Sco 
+sco.adjusted$binaryResponse =sco.adjusted$response
+
+# sco.sub = GSE145281[, GSE145281$seurat_clusters %in% c(10,11)]
+responders.enrichment = nonresponders.enrichment = list()
+seurat.clusters= unique(sco.adjusted$seurat_clusters) %>% as.character
+for (i in 1:nrow(Tree)) {
+    print(i)
+    subtree <- as.vector(DFS(Tree, i))
+    subtree <- which(cell_types %in% subtree) - 1
+    print(subtree)
+    old_ix <- as.integer(Tree[i,2]) - 1
+    oldsubtree  <- which(cell_types %in% as.vector(DFS(Tree,old_ix))) - 1
+    print(oldsubtree)
+    sco.sub = sco.adjusted[,sco.adjusted$seurat_clusters %in% oldsubtree] %>%
+     FindVariableFeatures(selection.method = "vst", nfeatures = 2000)
+    
+    ## Perform differential expression
+    deg.curr = mydeg(sco.sub)
+    deg.curr = deg.curr[padj<0.3]
+  
+    
+    ## Find markers in children
+    seurat.clust.cell.1 = subtree 
+    Idents(sco.sub) = ifelse(sco.sub$seurat_clusters %in% seurat.clust.cell.1, 1 ,2) %>% as.factor
+    markers.curr = FindAllMarkers(sco.sub, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25) ## this will give markers of both cell.1 (child1) and cell.2 (child2)
+    markers.top  = markers.curr %>% group_by(cluster) %>% top_n(n = 700, wt = avg_logFC)
+    term2gene  = markers.top %>%  as.data.table %>% 
+    .[,.(term=cluster,gene=gene)] %>% as.data.frame
+    
+    ## perform enrichment see : https://yulab-smu.github.io/clusterProfiler-book/chapter3.html
+    try({
+      responders.enrichment[[i]] = enricher(gene=deg.curr[log2FoldChange> 0]$gene, TERM2GENE = term2gene, pvalueCutoff=1)@result 
+    })
+    try({
+    nonresponders.enrichment[[i]] = enricher(gene=deg.curr[log2FoldChange< 0]$gene, TERM2GENE = term2gene, pvalueCutoff=1)@result
+    })
+}
+```
 
 
 ## Appendix
