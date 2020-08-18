@@ -1,0 +1,342 @@
+---
+title: "Tree differential expression analysis - Gold Standard 1 "
+author: "P. Nicol"
+date: "8/4/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Summary** In this file we compare immune populations from blood and tumor samples.
+
+
+## Load the data 
+
+As always, we load the data 
+
+```{r}
+#change as needed
+path <- "/Users/phillipnicol/Desktop/local_files/data/scDiffPopData"
+
+set.seed(61922940)
+
+Sco <- readRDS("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/gse145281_tumor/gse145281T_manualAnnot.RDS")
+```
+
+Let's visualize the predefined clusters 
+
+```{r, warning=FALSE}
+cell_types <- unique(Sco@meta.data$CellType)
+Sco@meta.data$seurat_clusters <- sapply(Sco@meta.data$CellType, function(x) {
+  return(which(cell_types == x) - 1)
+})
+
+
+Seurat::DimPlot(Sco, reduction = "umap", group.by = "CellType", label = TRUE, pt.size = 1) + Seurat::NoLegend()
+```
+
+
+## Creating a tree
+
+Our next goal is to create a cluster which reflects the relationships of clusters (cell types). Initially, all cell types are in the same group. 
+
+```{r}
+Mode <- function(x) {
+  xu <- unique(x)
+  return(xu[which.max(tabulate(match(x, xu)))])
+}
+
+SplitGroup <- function(Sco_sub, ixs) {
+  #Find variable features
+  Seurat::FindVariableFeatures(Sco_sub, verbose = FALSE)
+  
+  #Scale data (presumably for PCA)
+  Seurat::ScaleData(Sco_sub)
+  
+  #Run PCA on the variable features. Get 50 dimensional embeddings
+  Seurat::RunPCA(Sco, pc.genes = Sco_sub@assays$RNA@var.features, npcs = 50, verbose = FALSE)
+  embeddings <- Seurat::Embeddings(object = Sco_sub, reduction = 'pca')[,1:20]
+  
+  #Cluster via k means
+  km <- kmeans(embeddings, centers = 2, iter.max = 10)$cluster
+  
+  #Now we partition the clusters into one of two groups 
+  out <- sapply(ixs-1, function(x) {
+    Mode(km[which(Sco_sub$seurat_clusters == x)])
+  })
+  
+  return(out)
+}
+```
+
+
+```{r}
+group <- rep(1, length(cell_types))
+
+TreeMat <- matrix(1, nrow = length(cell_types), ncol = 1)
+counter <- 1
+
+while(length(unique(group)) != length(cell_types)) {
+  #Get group with most clusters
+  ixs <- which(group == Mode(group))
+  
+  split <- SplitGroup(subset(Sco, subset = seurat_clusters %in% (ixs-1)), ixs)
+
+  if(length(unique(split)) > 1) {
+    counter <- counter + 1
+    subgroup <- group[ixs]
+    subgroup[split == 2] <- counter
+    counter <- counter + 1
+    subgroup[split == 1] <- counter
+    group[ixs] <- subgroup
+    
+    TreeMat <- cbind(TreeMat, group)
+  }
+  else {
+    for(j in ixs) {
+      counter <- counter + 1
+      group[j] <- counter
+      
+      TreeMat <- cbind(TreeMat, group)
+    }
+  }
+}
+
+
+```
+
+
+
+
+## Converting the tree to a more convenient format
+
+As of now the tree is in a slightly unusual format 
+
+```{r}
+TreeMat
+```
+
+We'll convert this to a more convenient form 
+
+```{r}
+Tree <- matrix(nrow = 0, ncol = 2)
+
+counter <- 1
+
+for(i in 2:ncol(TreeMat)) {
+  newvals <- unique(TreeMat[TreeMat[,i] > counter,i])
+  for(j in newvals) {
+    counter <- counter + 1 
+    ixs <- which(TreeMat[,i] == counter)
+    newvec <- c(counter, TreeMat[ixs[1], i-1])
+    Tree <- rbind(Tree, newvec)
+  }
+}
+
+#Change names of leaves
+cntr <- 1
+for(ct in TreeMat[,ncol(TreeMat)]) {
+  ix <- which(Tree[,1] == ct)
+  Tree[ix,1] <- cell_types[cntr]
+  cntr <- cntr+1
+}
+
+# Also give the columns a name 
+colnames(Tree) <- c("Child", "Parent")
+rownames(Tree) <- c(1:nrow(Tree))
+Tree 
+```
+
+
+```{r}
+TreeIG <- cbind(Tree[,2], Tree[,1])
+TreeIG <- as.matrix(TreeIG)
+
+G <- igraph::graph_from_edgelist(TreeIG)
+V(G)$shape <- "none"
+plot(G, layout = -layout.reingold.tilford(G, root=1)[,2:1], label.color = "blue")
+
+```
+
+Obviously the spacing needs some work, but at least we have formed a valid tree. 
+## Traversing the tree 
+
+We should also write a quick function to get the leaves of any subtree. 
+
+```{r}
+DFS <- function(Tree, node) {
+  if(node == 0) {
+    return(cell_types)
+  }
+  
+  leaves <- c() 
+  
+  row <- Tree[node,]
+  
+  newparent <- row[1]
+  
+  allchild <- which(Tree[,2] == row[1])
+  
+  for(child in allchild) {
+    leaves <- c(leaves, DFS(Tree, child))
+  }
+  
+  if(length(allchild) == 0) {
+    return(row[1])
+  }
+  
+  return(leaves)
+}
+```
+
+## Differential expression on the tree 
+
+
+## Identify differentially expressed genes
+
+```{r}
+DESeq2DETest <- function(
+  data.use,
+  cells.1,
+  cells.2,
+  verbose = TRUE,
+  ...
+) {
+  # if (!PackageCheck('DESeq2', error = FALSE)) {
+  #   stop("Please install DESeq2 - learn more at https://bioconductor.org/packages/release/bioc/html/DESeq2.html")
+  # }
+  group.info <- data.frame(row.names = c(cells.1, cells.2))
+  group.info[cells.1, "group"] <- "Group1"
+  group.info[cells.2, "group"] <- "Group2"
+  group.info[, "group"] <- factor(x = group.info[, "group"])
+  group.info$wellKey <- rownames(x = group.info)
+  dds1 <- DESeq2::DESeqDataSetFromMatrix(
+    countData = data.use,
+    colData = group.info,
+    design = ~ group
+  )
+  dds1 <- DESeq2::estimateSizeFactors(object = dds1)
+  dds1 <- DESeq2::estimateDispersions(object = dds1, fitType = "local")
+  dds1 <- DESeq2::nbinomWaldTest(object = dds1)
+  res <- DESeq2::results(
+    object = dds1,
+    contrast = c("group", "Group1", "Group2"),
+    alpha = 0.05,
+    ...
+  )
+  # to.return <- data.frame(p_val = res$pvalue, row.names = rownames(res))
+  return(res)
+}
+```
+
+```{r}
+mydeg <- function(sco.curr) {
+    require(Matrix)
+    require(dplyr)
+    exp.curr1 = sco.curr@assays$RNA@counts[sco.curr@assays$RNA@var.features,]
+    meta.dt1 = sco.curr@meta.data %>%
+        as.data.table() %>%
+        .[,.(binaryResponse=response, patient=patient)] 
+    
+    meta.curr = list()
+    exp.curr2 = list()
+    for(patient in unique(meta.dt1$patient)){
+        inx = which(meta.dt1$patient==patient)
+        exp.curr2[[patient]] = rowSums(exp.curr1[,inx],na.rm=T)
+        meta.curr[[patient]] = meta.dt1[inx[1],]
+    }
+    meta.dt = do.call(rbind, meta.curr)
+    exp.curr = t(do.call(rbind, exp.curr2))
+    responders = meta.dt[binaryResponse==1]$patient
+    nonresponders = meta.dt[binaryResponse==0]$patient
+    deseq.out = DESeq2DETest(data.use=exp.curr[,c(responders,nonresponders)], cells.1=responders, cells.2=nonresponders)
+    deseq.dt = deseq.out %>%
+    as.data.frame %>% 
+        mutate(gene=rownames(.)) %>%
+        as.data.table() %>%
+        .[order(pvalue)] %>%
+        .[,padj:=p.adjust(pvalue, method="fdr")]
+    deseq.dt
+}
+```
+
+
+## Identify enriched genes
+
+Let's make a responder column. Blood = 1 and tumor = 0 
+
+```{r}
+response <- sapply(Sco@meta.data$patient, function(x) {
+  if(grepl("Blood", x)) {return(1)}
+  else {return(0)}
+})
+Sco@meta.data$response <- response
+```
+
+
+```{r}
+sco.adjusted <- Sco 
+sco.adjusted$binaryResponse =sco.adjusted$response
+rm(Sco)
+```
+
+
+```{r message = FALSE}
+
+# sco.sub = GSE145281[, GSE145281$seurat_clusters %in% c(10,11)]
+responders.enrichment = nonresponders.enrichment = list()
+seurat.clusters= unique(sco.adjusted$seurat_clusters) %>% as.character
+for (i in 1:nrow(Tree)) {
+    print(i)
+    subtree <- as.vector(DFS(Tree, i))
+    subtree <- which(cell_types %in% subtree) - 1
+    print(subtree)
+    old_ix <- as.integer(Tree[i,2]) - 1
+    oldsubtree  <- which(cell_types %in% as.vector(DFS(Tree,old_ix))) - 1
+    print(oldsubtree)
+    sco.sub = sco.adjusted[,sco.adjusted$seurat_clusters %in% oldsubtree] %>%
+     FindVariableFeatures(selection.method = "vst", nfeatures = 2000)
+    
+    ## Perform differential expression
+    deg.curr = mydeg(sco.sub)
+    deg.curr = deg.curr[padj<0.3]
+  
+    
+    ## Find markers in children
+    seurat.clust.cell.1 = subtree 
+    Idents(sco.sub) = ifelse(sco.sub$seurat_clusters %in% seurat.clust.cell.1, 1 ,2) %>% as.factor
+    markers.curr = FindAllMarkers(sco.sub, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25) ## this will give markers of both cell.1 (child1) and cell.2 (child2)
+    markers.top  = markers.curr %>% group_by(cluster) %>% top_n(n = 700, wt = avg_logFC)
+    term2gene  = markers.top %>%  as.data.table %>% 
+    .[,.(term=cluster,gene=gene)] %>% as.data.frame
+    
+    ## perform enrichment see : https://yulab-smu.github.io/clusterProfiler-book/chapter3.html
+    
+    # Make contingency table 
+    a <- length(which(deg.curr[log2FoldChange > 0]$gene %in% term2gene[term2gene[,1] == 1,2]))
+    b <- length(which(deg.curr[log2FoldChange < 0]$gene %in% term2gene[term2gene[,1] == 1,2]))
+    
+
+    c <- length(deg.curr[log2FoldChange > 0]$gene) - a
+    d <- length(deg.curr[log2FoldChange < 0]$gene) - b
+    
+    C <- matrix(c(a,b,c,d), nrow = 2, ncol = 2, byrow = TRUE)
+    responders.enrichment[[i]] <- fisher.test(C, alternative = "greater")$p.value
+    nonresponders.enrichment[[i]] <- fisher.test(C, alternative = "less")$p.value
+    
+    print(responders.enrichment[[i]])
+    print(nonresponders.enrichment[[i]])
+}
+```
+
+
+## Appendix
+
+```{r}
+sessionInfo()
+```
+
+
+
