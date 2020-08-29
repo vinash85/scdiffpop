@@ -18,11 +18,11 @@ As always, we load the data
 
 ```{r}
 #change as needed
-path <- "/Users/phillipnicol/Desktop/local_files/data/scDiffPopData"
-
 set.seed(61922940)
 
 Sco <- readRDS("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/gse145281_tumor/gse145281T_manualAnnot.RDS")
+
+NewSco <- readRDS("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/gse145281_tumor/KIRC_GSE145281_aPD1_CCA_res.RDS")
 ```
 
 Let's visualize the predefined clusters 
@@ -37,7 +37,6 @@ Sco@meta.data$seurat_clusters <- sapply(Sco@meta.data$CellType, function(x) {
 Seurat::DimPlot(Sco, reduction = "umap", group.by = "CellType", label = TRUE, pt.size = 1) + Seurat::NoLegend()
 ```
 
-
 ## Creating a tree
 
 Our next goal is to create a cluster which reflects the relationships of clusters (cell types). Initially, all cell types are in the same group. 
@@ -51,7 +50,7 @@ Mode <- function(x) {
 SplitGroup <- function(Sco_sub, ixs) {
   #Find variable features
   Seurat::FindVariableFeatures(Sco_sub, verbose = FALSE)
-  
+
   #Scale data (presumably for PCA)
   Seurat::ScaleData(Sco_sub)
   
@@ -81,7 +80,7 @@ counter <- 1
 while(length(unique(group)) != length(cell_types)) {
   #Get group with most clusters
   ixs <- which(group == Mode(group))
-  
+  print(group)
   split <- SplitGroup(subset(Sco, subset = seurat_clusters %in% (ixs-1)), ixs)
 
   if(length(unique(split)) > 1) {
@@ -278,12 +277,13 @@ Sco@meta.data$response <- response
 
 ```{r}
 sco.adjusted <- Sco 
-sco.adjusted$binaryResponse =sco.adjusted$response
+sco.adjusted$binaryResponse = sco.adjusted$response
 rm(Sco)
 ```
 
 
 ```{r message = FALSE}
+Counts <- matrix(0, nrow = nrow(Tree), ncol = 2)
 
 # sco.sub = GSE145281[, GSE145281$seurat_clusters %in% c(10,11)]
 responders.enrichment = nonresponders.enrichment = list()
@@ -312,8 +312,6 @@ for (i in 1:nrow(Tree)) {
     term2gene  = markers.top %>%  as.data.table %>% 
     .[,.(term=cluster,gene=gene)] %>% as.data.frame
     
-    ## perform enrichment see : https://yulab-smu.github.io/clusterProfiler-book/chapter3.html
-    
     # Make contingency table 
     a <- length(which(deg.curr[log2FoldChange > 0]$gene %in% term2gene[term2gene[,1] == 1,2]))
     b <- length(which(deg.curr[log2FoldChange < 0]$gene %in% term2gene[term2gene[,1] == 1,2]))
@@ -325,11 +323,43 @@ for (i in 1:nrow(Tree)) {
     C <- matrix(c(a,b,c,d), nrow = 2, ncol = 2, byrow = TRUE)
     responders.enrichment[[i]] <- fisher.test(C, alternative = "greater")$p.value
     nonresponders.enrichment[[i]] <- fisher.test(C, alternative = "less")$p.value
+    print(C)
     
     print(responders.enrichment[[i]])
     print(nonresponders.enrichment[[i]])
+    
+    sco.sub = sco.adjusted[,sco.adjusted$seurat_clusters %in% subtree]
+    ncells <- nrow(sco.sub@meta.data)
+    Counts[i,1] <- nrow(sco.sub@meta.data[sco.sub@meta.data$Type == "Blood",])/ncells
+    Counts[i,2] <- nrow(sco.sub@meta.data[sco.sub@meta.data$Type == "Tumor",])/ncells 
+    print(Counts[i,1])
+    print(Counts[i,2]) 
 }
 ```
+
+## Plot bar plot
+
+```{r}
+Counts <- as.data.frame(Counts)
+rownames(Counts) <- Tree[,1]
+
+df <- data.frame(matrix(0, nrow = 2*nrow(Counts), ncol = 0))
+df$val <- c(Counts[,1], Counts[,2])
+df$type <- c(rownames(Counts), rownames(Counts))
+df$source <- c(rep("Blood", nrow(Counts)), rep("Tumor", nrow(Counts)))
+df <- df[,c(3,2,1)]
+
+library(ggplot2)
+
+
+ggplot(df, aes(type, val)) +   
+  geom_bar(aes(fill=source),position = position_dodge(width = 0.5), width = 0.3, stat="identity") +
+   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
 
 
 ## Appendix
