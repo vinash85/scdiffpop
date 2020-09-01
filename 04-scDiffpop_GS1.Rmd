@@ -22,7 +22,7 @@ set.seed(61922940)
 
 Sco <- readRDS("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/gse145281_tumor/gse145281T_manualAnnot.RDS")
 
-NewSco <- readRDS("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/gse145281_tumor/KIRC_GSE145281_aPD1_CCA_res.RDS")
+#NewSco <- readRDS("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/gse145281_tumor/KIRC_GSE145281_aPD1_CCA_res.RDS")
 ```
 
 Let's visualize the predefined clusters 
@@ -154,8 +154,8 @@ TreeIG <- cbind(Tree[,2], Tree[,1])
 TreeIG <- as.matrix(TreeIG)
 
 G <- igraph::graph_from_edgelist(TreeIG)
-V(G)$shape <- "none"
-plot(G, layout = -layout.reingold.tilford(G, root=1)[,2:1], label.color = "blue")
+#V(G)$shape <- "none"
+#plot(G, layout = -layout.reingold.tilford(G, root=1)[,2:1], label.color = "blue")
 
 ```
 
@@ -332,10 +332,71 @@ for (i in 1:nrow(Tree)) {
     ncells <- nrow(sco.sub@meta.data)
     Counts[i,1] <- nrow(sco.sub@meta.data[sco.sub@meta.data$Type == "Blood",])/ncells
     Counts[i,2] <- nrow(sco.sub@meta.data[sco.sub@meta.data$Type == "Tumor",])/ncells 
+    
+    ncells <- nrow(sco.sub@meta.data)
+    Counts[i,1] <- nrow(sco.sub@meta.data[sco.sub@meta.data$response == 1,])/ncells
+    Counts[i,2] <- nrow(sco.sub@meta.data[sco.sub@meta.data$response == 0,])/ncells 
     print(Counts[i,1])
     print(Counts[i,2]) 
 }
 ```
+
+
+## Plot pie graph
+
+First append the first column to Counts
+
+```{r}
+nblood <- length(which(sco.adjusted@meta.data$Type == "Blood"))
+ntumor <- length(which(sco.adjusted@meta.data$Type == "Tumor"))
+Counts <- rbind(c(nblood, ntumor), Counts)
+```
+
+
+```{r}
+library(ggraph)
+library(scatterpie)
+
+xy <- layout_as_tree(G)
+V(G)$x <- xy[, 1]
+V(G)$y <- xy[, 2] 
+
+V(G)$Blood <- Counts[,1]
+V(G)$Tumor <- Counts[,2]
+
+ix <- which(nonresponders.enrichment < 0.05 | responders.enrichment < 0.05)
+
+for(i in ix) {
+  s <- min(nonresponders.enrichment[[i]], responders.enrichment[[i]])
+  if(s < 0.001) {
+    V(G)$name[i+1] <- paste(V(G)$name[i+1], "***", sep="")    
+  }
+  else if(s < 0.001) {
+    V(G)$name[i+1] <- paste(V(G)$name[i+1], "**", sep="")    
+  }
+  else {
+    V(G)$name[i+1] <- paste(V(G)$name[i+1], "*", sep="")    
+  }
+}
+
+
+p <- ggraph(G, "manual", x=  V(G)$x, y=V(G)$y) + geom_edge_link() #+ geom_node_point(aes(size = 2, col = names(effect)))
+#p <- p + geom_node_text(aes(x = x*1.005, y=y*1.005, label = name, angle = 90), 
+p <- p +   geom_scatterpie(
+  cols = c("Blood", "Tumor"),
+  data = igraph::as_data_frame(G, "vertices"),
+  colour = NA,
+  pie_scale = 0.75
+) 
+p <- p + geom_node_label(aes(label = name, angle = 90), repel = FALSE, nudge_y = 0.25, col = "midnightblue")
+p <- p + theme_graph()
+plot(p)
+
+
+
+```
+
+
 
 ## Plot bar plot
 

@@ -138,6 +138,8 @@ Blood[12,3] <- 1
 ```{r}
 library(bang)
 
+V <- rep(0, nrow(Tree))
+
 for(i in 1:nrow(Tree)) {
   subtree <- DFS(Tree,i)
   
@@ -182,9 +184,14 @@ for(i in 1:nrow(Tree)) {
   colnames(res_blood$theta_sim_vals) <- c("B1", "B2", "B3", "B4")
   colnames(res_tumor$theta_sim_vals) <- c("T1", "T2", "T3", "T4")
   
-  BloodSamps <- sample(res_blood$theta_sim_vals, 1000, replace = TRUE)
-  TumorSamps <- sample(res_tumor$theta_sim_vals, 1000, replace = TRUE)
-  Samps <- BloodSamps - TumorSamps
+  res_blood$sim_vals <- as.data.frame(res_blood$sim_vals)
+  res_tumor$sim_vals <- as.data.frame(res_tumor$sim_vals)
+  
+  Pop_diff <- 0
+  Pop_diff <- sum(sapply(c(1:1000), function(x) {
+    if(rbeta(1,res_blood$sim_vals$alpha[x],res_blood$sim_vals$beta[x]) > rbeta(1,res_tumor$sim_vals$alpha[x],res_tumor$sim_vals$beta[x])) {return(1)}
+    else {return(0)}
+  }))/1000
   
   
   tumorupper <- apply(res_tumor$theta_sim_vals, 2, function(x) quantile(x,0.75))
@@ -204,9 +211,49 @@ for(i in 1:nrow(Tree)) {
   wp <- wilcox.test(blood_meds, tumor_meds)$p.value
   wp <- round(wp, 2)
   
-  graphics::boxplot(cbind(res_blood$theta_sim_vals, res_tumor$theta_sim_vals), col = c(rep("red", 4), rep("blue", 4)), main = i, ylab = "Theta", xlab = paste("Wilcox: ", wp, "TumorGap: ", TumorGap, "BloodGap:", BloodGap))
-paste("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/gse145281_tumor/Bayesian_model/", i, ".png", sep = "")
-  hist(Samps)
+  V[i] <- Pop_diff
+
+  
+  graphics::boxplot(cbind(res_blood$theta_sim_vals, res_tumor$theta_sim_vals), col = c(rep("red", 4), rep("blue", 4)), main = i, ylab = "Theta", xlab = paste("Wilcox: ", wp, "TumorGap: ", TumorGap, "BloodGap:", BloodGap, "PopDiff: ", Pop_diff))
+#paste("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/gse145281_tumor/Bayesian_model/", i, ".png", sep = "")
+  
+  # Now without hierarichal component
+  res_blood <- list()
+  res_tumor <- list()
+  theta_sim_vals <- matrix(0, nrow = 1000, ncol = 4)
+  theta_sim_vals[,1] <- rbeta(1000, 1+df_blood[1,1], 1+df_blood[1,2]-df_blood[1,1])
+  theta_sim_vals[,2] <- rbeta(1000, 1+df_blood[2,1], 1+df_blood[2,2]-df_blood[2,1])
+  theta_sim_vals[,3] <- rbeta(1000, 1+df_blood[3,1], 1+df_blood[3,2]-df_blood[3,1])
+  theta_sim_vals[,4] <- rbeta(1000, 1+df_blood[4,1], 1+df_blood[4,2]-df_blood[4,1])
+  res_blood$theta_sim_vals <- theta_sim_vals
+  
+  theta_sim_vals <- matrix(0, nrow = 1000, ncol = 4)
+  theta_sim_vals[,1] <- rbeta(1000, 1+df_tumor[1,1], 1+df_tumor[1,2]-df_tumor[1,1])
+  theta_sim_vals[,2] <- rbeta(1000, 1+df_tumor[2,1], 1+df_tumor[2,2]-df_tumor[2,1])
+  theta_sim_vals[,3] <- rbeta(1000, 1+df_tumor[3,1], 1+df_tumor[3,2]-df_tumor[3,1])
+  theta_sim_vals[,4] <- rbeta(1000, 1+df_tumor[4,1], 1+df_tumor[4,2]-df_tumor[4,1])
+  res_tumor$theta_sim_vals <- theta_sim_vals
+  
+  tumorupper <- apply(res_tumor$theta_sim_vals, 2, function(x) quantile(x,0.75))
+  bloodupper <- apply(res_blood$theta_sim_vals, 2, function(x) quantile(x,0.75))
+  tumorlower <- apply(res_tumor$theta_sim_vals, 2, function(x) quantile(x,0.25))
+  bloodlower <- apply(res_blood$theta_sim_vals, 2, function(x) quantile(x,0.25))
+  
+  TumorGap <- min(tumorlower) - max(bloodupper)
+  BloodGap <- min(bloodlower) - max(tumorupper)
+  TumorGap <- round(TumorGap,2); BloodGap <- round(BloodGap,2)
+  
+  
+  blood_meds <- apply(res_blood$theta_sim_vals, 2, median)
+  tumor_meds <- apply(res_tumor$theta_sim_vals, 2, median)
+  
+  
+  wp <- wilcox.test(blood_meds, tumor_meds)$p.value
+  wp <- round(wp, 2)
+
+  
+  graphics::boxplot(cbind(res_blood$theta_sim_vals, res_tumor$theta_sim_vals), col = c(rep("red", 4), rep("blue", 4)), main = i, ylab = "Theta", xlab = paste("Wilcox: ", wp, "TumorGap: ", TumorGap, "BloodGap:", BloodGap, "PopDiff: ", Pop_diff))
+  
 }
 ```
 
