@@ -1,0 +1,141 @@
+---
+title: "Blood v Tumor Augur" 
+output:
+  html_document:
+    df_print: paged
+header-includes:
+- \usepackage[colorinlistoftodos]{todonotes}
+- \hypersetup{colorlinks=true,linkcolor=blue!30!black}
+- \geometry{rmargin=1.5in}
+---
+
+## Loading the data
+
+```{r}
+Sco <- readRDS("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/gse145281_tumor/KIRC_GSE145281_aPD1_CCA_res.RDS")
+Sco <- Sco$RNA
+```
+
+
+## Augur
+
+Let's run Augur 
+
+```{r}
+Sco@meta.data <- as.data.frame(cbind(Sco@meta.data$source, as.character(Sco@meta.data$assign.level3_anno)))
+
+colnames(Sco@meta.data) <- c("label", "cell_type")
+
+```
+
+
+```{r, eval = FALSE}
+augur = Augur::calculate_auc(Sco, n_threads = 8)
+
+save(augur, file = "/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/Augur/augur_BLOOD_V_TUMOR.RData")
+```
+
+Let's take a look at the result 
+
+```{r}
+augur = load("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/Augur/augur_BLOOD_V_TUMOR.RData")
+augur$AUC
+```
+
+```{r}
+library(ggplot2)
+
+#prepare colors
+library(Polychrome)
+alfa <- alphabet.colors(10)
+
+#plot
+df <- as.data.frame(augur$AUC)
+p <- ggplot(data=df, aes(x=cell_type, y = auc)) + geom_bar(stat = "identity", fill = alfa)
+p <- p + xlab("Cell type") + ylab("AUC (Augur)") + coord_cartesian(ylim=c(0.5,1.0))
+p <- p + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
+plot(p)
+
+#save the plot
+#png(file = "/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/Augur/auc_pbmc.png")
+```
+
+
+
+## Augur randomization 
+
+We might be interested in what the maximum AUC is under randomized patient labels. 
+
+
+```{r}
+Sco <- readRDS("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/gse145281_tumor/KIRC_GSE145281_aPD1_CCA_res.RDS")
+Sco <- Sco$RNA
+```
+
+
+
+```{r, eval = FALSE}
+N <- 5
+
+ScoC <- Sco
+
+aug_results <- list() 
+
+for(i in 1:N) {
+  pat_names <- unique(Sco@meta.data$sample)
+  pat_names_shuff <- sample(pat_names, size = length(pat_names), replace = FALSE)
+  new_source_names <- Sco@meta.data$source
+
+  cntr <- 1
+  for(j in pat_names_shuff) {
+    jx <- which(ScoC@meta.data$sample == pat_names[cntr])
+    if(grepl("Blood", j)) {
+      new_source_names[jx] <- "Blood"
+    }
+    else {
+      new_source_names[jx] <- "Tumor"
+    }
+    
+    cntr <- cntr + 1
+  }
+  
+  ScoC@meta.data$source <- new_source_names
+  
+  ScoC@meta.data <- as.data.frame(cbind(ScoC@meta.data$source, as.character(ScoC@meta.data$assign.level3_anno)))
+
+  colnames(ScoC@meta.data) <- c("label", "cell_type")  
+  
+  aug_results[[i]] = Augur::calculate_auc(ScoC, n_threads = 8)
+  
+  ScoC <- Sco
+}
+```
+
+
+```{r}
+aug_results <- load("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/Augur/augur_BLOOD_V_TUMOR_RANDOMIZED.RData")
+
+for(i in 1:N) {
+  print(aug_results[[i]]$AUC)
+}
+```
+
+
+
+```{r}
+for(i in 1:N) {
+alfa <- "grey"
+
+#plot
+df <- as.data.frame(aug_results[[i]]$AUC)
+p <- ggplot(data=df, aes(x=cell_type, y = auc)) + geom_bar(stat = "identity", fill = alfa)
+p <- p + xlab("Cell type") + ylab("AUC (Augur)") + coord_cartesian(ylim=c(0.5,1.0))
+p <- p + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
+plot(p)
+}
+```
+
+
+
+
+

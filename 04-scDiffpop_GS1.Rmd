@@ -243,7 +243,7 @@ mydeg <- function(sco.curr) {
     exp.curr2 = list()
     for(patient in unique(meta.dt1$patient)){
         inx = which(meta.dt1$patient==patient)
-        exp.curr2[[patient]] = rowSums(exp.curr1[,inx],na.rm=T)
+        exp.curr2[[patient]] = rowSums(as.matrix(exp.curr1[,inx]),na.rm=T)
         meta.curr[[patient]] = meta.dt1[inx[1],]
     }
     meta.dt = do.call(rbind, meta.curr)
@@ -287,6 +287,7 @@ Counts <- matrix(0, nrow = nrow(Tree), ncol = 2)
 
 # sco.sub = GSE145281[, GSE145281$seurat_clusters %in% c(10,11)]
 responders.enrichment = nonresponders.enrichment = list()
+responders.topgenes = nonresponders.topgenes = list()
 seurat.clusters= unique(sco.adjusted$seurat_clusters) %>% as.character
 for (i in 1:nrow(Tree)) {
     print(i)
@@ -328,7 +329,8 @@ for (i in 1:nrow(Tree)) {
     print(responders.enrichment[[i]])
     print(nonresponders.enrichment[[i]])
     
-    sco.sub = sco.adjusted[,sco.adjusted$seurat_clusters %in% subtree]
+    sco.sub = sco.adjusted[,sco.adjusted$seurat_clusters %in% subtree] %>%
+     FindVariableFeatures(selection.method = "vst", nfeatures = 2000)
     ncells <- nrow(sco.sub@meta.data)
     Counts[i,1] <- nrow(sco.sub@meta.data[sco.sub@meta.data$Type == "Blood",])/ncells
     Counts[i,2] <- nrow(sco.sub@meta.data[sco.sub@meta.data$Type == "Tumor",])/ncells 
@@ -338,6 +340,12 @@ for (i in 1:nrow(Tree)) {
     Counts[i,2] <- nrow(sco.sub@meta.data[sco.sub@meta.data$response == 0,])/ncells 
     print(Counts[i,1])
     print(Counts[i,2]) 
+    
+    #Do differential expression 
+    try({
+      deg.curr = mydeg(sco.sub)
+      responders.topgenes[[i]] <- deg.curr[log2FoldChange > 0]$gene[1]
+      nonresponders.topgenes[[i]] <- deg.curr[log2FoldChange < 0]$gene[1]})
 }
 ```
 
@@ -395,6 +403,52 @@ plot(p)
 
 
 ```
+
+## Differentially expressed gene on each node 
+
+
+```{r}
+library(ggraph)
+library(igraph)
+
+xy <- layout_as_tree(G)
+V(G)$x <- xy[, 1]
+V(G)$y <- xy[, 2] 
+
+V(G)$Blood <- c(" ", unlist(blood_topgenes))
+V(G)$Tumor <- c(" ", unlist(tumor_topgenes))
+
+p <- ggraph(G, "manual", x=  V(G)$x, y=V(G)$y) + geom_edge_link() #+ geom_node_point(aes(size = 2, col = names(effect)))
+#p <- p + geom_node_text(aes(x = x*1.005, y=y*1.005, label = name, angle = 90), 
+#p <- p+ geom_node_label(aes(label = V(G)$Blood), repel = TRUE, col = "red")
+p <- p + geom_node_text(aes(label = V(G)$Blood), repel = FALSE, nudge_x = -0.3, nudge_y = 0, col = "red")
+p <- p + geom_node_text(aes(label = V(G)$Tumor), repel = FALSE, nudge_x = -0.3, nudge_y = 0.1, col = "blue")
+p <- p + geom_node_point(size = 1)
+p <- p + geom_node_label(aes(label = name, angle = 90), repel = FALSE, nudge_y = 0.25, col = "midnightblue")
+#p <- p + geom_node_label(aes(label = name, angle = 90), repel = FALSE, nudge_y = 0.25, col = "midnightblue")
+p <- p + theme_graph()
+plot(p)
+
+
+
+p <- ggraph(G, "manual", x=  V(G)$x, y=V(G)$y) + geom_edge_link() #+ geom_node_point(aes(size = 2, col = names(effect)))
+#p <- p + geom_node_text(aes(x = x*1.005, y=y*1.005, label = name, angle = 90), 
+#p <- p+ geom_node_label(aes(label = V(G)$Blood), repel = TRUE, col = "red")
+p <- p + geom_node_text(aes(label = V(G)$Tumor), repel = FALSE, nudge_x = -0.3, nudge_y = 0, col = "blue", label.size = 1)
+p <- p + geom_node_point(size = 1)
+p <- p + geom_node_label(aes(label = name, angle = 90), repel = FALSE, nudge_y = 0.25, col = "midnightblue")
+#p <- p + geom_node_label(aes(label = name, angle = 90), repel = FALSE, nudge_y = 0.25, col = "midnightblue")
+p <- p + theme_graph()
+plot(p)
+
+
+```
+
+
+
+
+
+
 
 
 
