@@ -38,7 +38,7 @@ save(augur, file = "/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/A
 Let's take a look at the result 
 
 ```{r}
-augur = load("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/Augur/augur_BLOOD_V_TUMOR.RData")
+load("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/Augur/augur_BLOOD_V_TUMOR.RData")
 augur$AUC
 ```
 
@@ -70,12 +70,13 @@ We might be interested in what the maximum AUC is under randomized patient label
 ```{r}
 Sco <- readRDS("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/gse145281_tumor/KIRC_GSE145281_aPD1_CCA_res.RDS")
 Sco <- Sco$RNA
+
+N <- 5
 ```
 
 
 
 ```{r, eval = FALSE}
-N <- 5
 
 ScoC <- Sco
 
@@ -113,10 +114,10 @@ for(i in 1:N) {
 
 
 ```{r}
-aug_results <- load("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/Augur/augur_BLOOD_V_TUMOR_RANDOMIZED.RData")
+load("/Users/phillipnicol/Desktop/local_files/data/scDiffPopDATA/Augur/augur_BLOOD_V_TUMOR_RANDOMIZED.RData")
 
 for(i in 1:N) {
-  print(aug_results[[i]]$AUC)
+  print(x[[i]]$AUC)
 }
 ```
 
@@ -127,7 +128,7 @@ for(i in 1:N) {
 alfa <- "grey"
 
 #plot
-df <- as.data.frame(aug_results[[i]]$AUC)
+df <- as.data.frame(x[[i]]$AUC)
 p <- ggplot(data=df, aes(x=cell_type, y = auc)) + geom_bar(stat = "identity", fill = alfa)
 p <- p + xlab("Cell type") + ylab("AUC (Augur)") + coord_cartesian(ylim=c(0.5,1.0))
 p <- p + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))
