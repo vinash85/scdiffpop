@@ -1,2 +1,3 @@
-# scdiffpop
-Single cell differential immune cell population
+# scDiffPop
+
+R package in development ... ... 
