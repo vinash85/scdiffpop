@@ -148,14 +148,15 @@ rownames(Tree) <- c(1:nrow(Tree))
 Tree 
 ```
 
+## igraph object
 
 ```{r}
 TreeIG <- cbind(Tree[,2], Tree[,1])
 TreeIG <- as.matrix(TreeIG)
 
 G <- igraph::graph_from_edgelist(TreeIG)
-#V(G)$shape <- "none"
-#plot(G, layout = -layout.reingold.tilford(G, root=1)[,2:1], label.color = "blue")
+V(G)$shape <- "none"
+plot(G, layout = -layout.reingold.tilford(G, root=1)[,2:1], label.color = "blue")
 
 ```
 
@@ -250,6 +251,8 @@ mydeg <- function(sco.curr) {
     exp.curr = t(do.call(rbind, exp.curr2))
     responders = meta.dt[binaryResponse==1]$patient
     nonresponders = meta.dt[binaryResponse==0]$patient
+    print(responders)
+    print(nonresponders)
     deseq.out = DESeq2DETest(data.use=exp.curr[,c(responders,nonresponders)], cells.1=responders, cells.2=nonresponders)
     deseq.dt = deseq.out %>%
     as.data.frame %>% 
@@ -264,6 +267,7 @@ mydeg <- function(sco.curr) {
 
 ## Identify enriched genes
 
+## Don't Run This If you aren't using blood or tumor
 Let's make a responder column. Blood = 1 and tumor = 0 
 
 ```{r}
@@ -289,7 +293,7 @@ Counts <- matrix(0, nrow = nrow(Tree), ncol = 2)
 responders.enrichment = nonresponders.enrichment = list()
 responders.topgenes = nonresponders.topgenes = list()
 seurat.clusters= unique(sco.adjusted$seurat_clusters) %>% as.character
-for (i in 1:nrow(Tree)) {
+for (i in 1:1) {
     print(i)
     subtree <- as.vector(DFS(Tree, i))
     subtree <- which(cell_types %in% subtree) - 1
@@ -399,9 +403,6 @@ p <- p +   geom_scatterpie(
 p <- p + geom_node_label(aes(label = name, angle = 90), repel = FALSE, nudge_y = 0.25, col = "midnightblue")
 p <- p + theme_graph()
 plot(p)
-
-
-
 ```
 
 ## Differentially expressed gene on each node 
@@ -440,8 +441,6 @@ p <- p + geom_node_label(aes(label = name, angle = 90), repel = FALSE, nudge_y =
 #p <- p + geom_node_label(aes(label = name, angle = 90), repel = FALSE, nudge_y = 0.25, col = "midnightblue")
 p <- p + theme_graph()
 plot(p)
-
-
 ```
 
 
