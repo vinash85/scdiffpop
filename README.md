@@ -1,2 +1,4 @@
 # scdiffpop
 Single cell differential immune cell population
+
+In COVID-19 patients, there is a need to determine the role of specific immune cells that drive disease severity. This involves comparing immune fraction between samples (e.g., between COVID-infected vs. healthy samples) using a nonparametric test. However, such predictions are not robust, and the test is underpowered due to small sample sizes in single-cell RNAseq datasets. To address this, we are devising a statistical tool, scDiffPop, to robustly identify differential immune populations between any two phenotypes (infected vs. healthy, or severe vs. asymptomatic). The method accounts for patient specific effects and determine immune cells underlying COVID-19 severity. Unlike previous tests, our method fully harnesses the power of single-cell technologies and will allows us to rigorously integrate statistical information across several single cell RNA cohorts.
