@@ -67,7 +67,7 @@ library(ggplot2)
 
 #prepare colors
 library(Polychrome)
-alfa <- alphabet.colors(14)
+alfa <- alphabet.colors(19)
 
 #plot
 df <- as.data.frame(augur$AUC)
